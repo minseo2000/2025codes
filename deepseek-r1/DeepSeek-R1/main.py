@@ -1,76 +1,45 @@
-# Load model directly
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModelForCausalLM, StoppingCriteria, StoppingCriteriaList
 import torch
-from tqdm import tqdm  # Import tqdm for progress bar
+import sys
+import time
 
-# Free MPS memory before running
-if torch.backends.mps.is_available():
-    torch.mps.empty_cache()
-    torch.mps.synchronize()
+class StreamCriteria(StoppingCriteria):
+    def __init__(self, tokenizer):
+        self.tokenizer = tokenizer
+
+    def __call__(self, input_ids, scores, **kwargs):
+        # 마지막 토큰을 가져와 출력
+        last_token = input_ids[0, -1].item()
+        last_word = self.tokenizer.decode([last_token], skip_special_tokens=True)
+        sys.stdout.write(last_word)  # 한 글자씩 출력
+        sys.stdout.flush()  # 즉시 출력
+        time.sleep(0.05)  # 자연스러운 출력 속도 조절 (선택 사항)
+        return False  # False를 반환하면 계속 생성
 
 # Load tokenizer and model
 model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-# Check if MPS (Apple GPU) is available, otherwise use CPU
 device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
 print(f"Using device: {device}")
 
-# Load model onto the selected device
-model = AutoModelForCausalLM.from_pretrained(model_name)
-model.to(device)
-
-# Set pad token ID (to avoid warnings)
-tokenizer.pad_token = tokenizer.eos_token
-
+# Load model
+model = AutoModelForCausalLM.from_pretrained(model_name, device_map="auto")
 
 while True:
-    # 사용자 입력 받기
-    user_input = input("\n문장을 dd 입력하세요: ")
+    user_input = input("\n문장을 입력하세요: ")
+    inputs = tokenizer(user_input, return_tensors="pt").to(device)
 
-    # 입력 문장 토큰화
-    inputs = tokenizer(user_input, return_tensors="pt", padding=True, truncation=True)
-    input_ids = inputs.input_ids.to(device)
-    attention_mask = inputs.attention_mask.to(device)
+    print("\n=== 생성된 텍스트 ===\n", end="", flush=True)
 
-    # Maximum length of generated text
-    max_length = 100  # 속도와 메모리 절약을 위해 100으로 설정
+    stopping_criteria = StoppingCriteriaList([StreamCriteria(tokenizer)])
 
-    # Create a progress bar
-    print("\nGenerating text...")
-    generated_ids = input_ids  # 초기 입력값 설정
-    progress_bar = tqdm(total=max_length, desc="Generating", unit="token")
+    model.generate(
+        **inputs,
+        max_length=500,
+        temperature=0.7,
+        do_sample=True,
+        stopping_criteria=stopping_criteria  # ✅ 스트리밍 출력을 위한 조건 추가
+    )
 
-    # Step-by-step token generation
-    for _ in range(max_length):
-        output = model.generate(
-            input_ids,
-            attention_mask=attention_mask,
-            max_length=100,  # 🚀 max_new_tokens 대신 사용
-            temperature=0.7,
-            top_k=50,
-            top_p=0.9,
-            repetition_penalty=1.2,
-            pad_token_id=tokenizer.pad_token_id,
-            do_sample=True,
-        )
-
-        # 새 토큰 추가
-        new_token_id = output[0, -1].unsqueeze(0).unsqueeze(0)  # 마지막 생성된 토큰 추출
-        generated_ids = torch.cat([generated_ids, new_token_id], dim=-1)  # 새로운 토큰 추가
-
-        # 진행률 바 업데이트
-        progress_bar.update(1)
-
-        # 만약 모델이 EOS(종료) 토큰을 생성하면 종료
-        if new_token_id.item() == tokenizer.eos_token_id:
-            break
-
-    progress_bar.close()  # 진행 완료 후 tqdm 종료
-
-    # 생성된 문장 디코딩
-    generated_text = tokenizer.decode(generated_ids[0], skip_special_tokens=True)
-
-    # 결과 출력
-    print("\n=== 생성된 텍스트 ===")
-    print(generated_text)
+    print("\n")  # 줄바꿈 추가
