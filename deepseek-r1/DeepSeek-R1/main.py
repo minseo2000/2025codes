@@ -17,7 +17,7 @@ class StreamCriteria(StoppingCriteria):
         return False  # False를 반환하면 계속 생성
 
 # Load tokenizer and model
-model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B"
+model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 
 device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
@@ -36,7 +36,7 @@ while True:
 
     model.generate(
         **inputs,
-        max_length=500,
+        max_length=100,
         temperature=0.7,
         do_sample=True,
         stopping_criteria=stopping_criteria  # ✅ 스트리밍 출력을 위한 조건 추가
