@@ -2,7 +2,6 @@ from transformers import AutoTokenizer, AutoModelForCausalLM, StoppingCriteria, 
 import torch
 import sys
 import time
-import bitsandbytes as bnb  # ✅ 양자화 라이브러리
 
 class StreamCriteria(StoppingCriteria):
     def __init__(self, tokenizer):
@@ -18,19 +17,17 @@ class StreamCriteria(StoppingCriteria):
         return False  # False를 반환하면 계속 생성
 
 # Load tokenizer
-model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B"
+model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 
 # Use CUDA if available, otherwise fallback to CPU
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
-# Load model with 4-bit quantization
+# Load model **without quantization**
 model = AutoModelForCausalLM.from_pretrained(
     model_name,
-    load_in_4bit=True,  # ✅ 4-bit 양자화
-    torch_dtype=torch.float16,  # ✅ FP16 연산 적용
-    bnb_4bit_compute_dtype=torch.float16  # ✅ 연산 데이터타입 설정
+    torch_dtype=torch.float16  # ✅ FP16 연산 적용
 ).to(device)
 
 while True:
