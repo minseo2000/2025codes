@@ -8,31 +8,46 @@ class StreamCriteria(StoppingCriteria):
         self.tokenizer = tokenizer
 
     def __call__(self, input_ids, scores, **kwargs):
-        # 마지막 토큰을 가져와 출력
         last_token = input_ids[0, -1].item()
         last_word = self.tokenizer.decode([last_token], skip_special_tokens=True)
-        sys.stdout.write(last_word)  # 한 글자씩 출력
-        sys.stdout.flush()  # 즉시 출력
-        time.sleep(0.05)  # 자연스러운 출력 속도 조절 (선택 사항)
-        return False  # False를 반환하면 계속 생성
+        sys.stdout.write(last_word)
+        sys.stdout.flush()
+        time.sleep(0.05)  # 자연스러운 출력 속도 조절
+        return False
 
-# Load tokenizer
-model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B"
+# ✅ 필수 패키지 설치
+try:
+    import bitsandbytes as bnb
+except ImportError:
+    print("❌ 'bitsandbytes'가 설치되지 않았습니다. 설치하려면 'pip install bitsandbytes' 실행하세요.")
+    exit()
+
+# ✅ 모델 및 토크나이저 로드
+model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-# Use CUDA if available, otherwise fallback to CPU
+# ✅ CUDA 사용 여부 확인
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
-# Load model **without quantization**
+# ✅ 4-bit 양자화 적용하여 모델 로드
 model = AutoModelForCausalLM.from_pretrained(
     model_name,
-    torch_dtype=torch.float16  # ✅ FP16 연산 적용
+    torch_dtype=torch.float16,
+    load_in_4bit=True,  # ✅ 4-bit 양자화 적용
+    bnb_4bit_compute_dtype=torch.float16,  # ✅ 연산은 FP16 유지
 ).to(device)
+
+# ✅ 시스템 프롬프트 설정
+system_prompt = "마지막 답변은 반드시 한국말(korean)로 답변해줘."
 
 while True:
     user_input = input("\n문장을 입력하세요: ")
-    inputs = tokenizer(user_input, return_tensors="pt").to(device)
+
+    # 사용자 입력과 시스템 프롬프트 결합
+    full_input = f"시스템: {system_prompt}\n사용자: {user_input}\nAI:"
+
+    inputs = tokenizer(full_input, return_tensors="pt").to(device)
 
     print("\n=== 생성된 텍스트 ===\n", end="", flush=True)
 
@@ -40,7 +55,7 @@ while True:
 
     model.generate(
         **inputs,
-        max_length=500,
+        max_length=1200,
         temperature=0.7,
         do_sample=True,
         stopping_criteria=stopping_criteria  # ✅ 스트리밍 출력을 위한 조건 추가
